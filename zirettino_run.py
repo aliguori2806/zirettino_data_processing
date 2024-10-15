@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import json
@@ -180,9 +181,14 @@ class ZirettinoRun():
         self.daq1keys = ["DAQ1_ID", "DAQ1_TriggerCounts", "DAQ1_Valid", "DAQ1_Flag", "DAQ1_Lost", "DAQ1_Validated"]
         self.daq2keys = ["DAQ2_ID", "DAQ2_TriggerCounts", "DAQ2_Valid", "DAQ2_Flag", "DAQ2_Lost", "DAQ2_Validated"]
         self.ckeys = ["clu_ModuleID", "clu_PlaneID", "clu_SegmentID", "clu_ViewFlag", "clu_SideFlag", "clu_Size", "clu_Charge_HG", "clu_ChargeStd_HG", "clu_Charge_LG", "clu_ChargeStd_LG", "clu_Position_HG"]
+        
         self.segment_dict = {"B": 0, "D": 1, "T": 2, "W": 3}
         self.view_dict = {"X": 0, "Y": 1}
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        #self.default_pedestal_gain_files_path = os.path.join(self.base_dir, 'bb', 'B')
+        
 
+    
     def load_asic_info(self, asic_info_file):
         asic_info_df = pd.read_csv(asic_info_file)
         self.asic_info = {}
@@ -225,6 +231,14 @@ class ZirettinoRun():
             if self.nevts != self.data[feb][list(self.data[feb].keys())[0]].shape[0]:
                 print("Attenzione: sono state aggiunte due feb con un diverso numero di eventi.")
         self.nfebs = self.nfebs + 1
+        if self.gains_dfs is None:
+            self.gains_dfs = {}
+        if self.pedestals_dfs is None:
+            self.pedestals_dfs = {}
+        for daq in [1, 2]:
+            for gain in ["HG", "LG"]:
+                self.pedestals_dfs[(feb, daq, gain)] = pd.read_csv(f"{self.base_dir}/default_pedestal_gain_files/default_pedestals_{gain}.csv")
+                self.gains_dfs[(feb, daq, gain)] = pd.read_csv(f"{self.base_dir}/default_pedestal_gain_files/default_gains_{gain}.csv")
         
     def load_configurator(self, configurator_file, feb="ZF0"):
         if self.configurators is None:
