@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
+from scipy.stats import linregress
 import matplotlib.pyplot as plt
 
 def gaussian(x, a, b, c):
@@ -72,9 +73,29 @@ def rough_calibration(charges_ps, first_peak, nbins, rl, rr, ped_sigma=3, minhei
         axs[1].annotate(f"gain = {par[0]:.2f}", xy=(0.65, 0.15), xycoords='axes fraction', fontsize=12, ha='center', va='center', bbox=dict(facecolor='lightgray', alpha=0.5))
         axs[1].set_xlabel("Photoelectrons")
         axs[1].set_ylabel("Average Charge (ADC)")
-        axs[1].grid()       
+        axs[1].grid()
 
     return par[0], np.sqrt(cov[0][0]), par[1], np.sqrt(cov[1][1])
+
+
+def low_gain_cross_calibration(chargesHG_ps, chargesLG_ps, maxHGcut=0.6, showplot=False):
+
+    x = chargesHG_ps
+    y = chargesLG_ps
+    slope, interc, r_value, p_value, std_err = linregress(x[ (x > 0) & (x < maxHGcut*np.max(x))], y[(x > 0) & (x < maxHGcut*np.max(x))])
+
+    if showplot == True:
+        fig, axs = plt.subplots(1, 1, figsize=(8, 6))
+        axs.scatter(x, y, s=0.5)
+        axs.plot(x[ (x > 0) & (x < maxHGcut*np.max(x))], slope*x[ (x > 0) & (x < maxHGcut*np.max(x))] + interc, color="red")
+        axs.set_xlabel("HG (ADC)")
+        axs.set_ylabel("LG (ADC)")
+        axs.annotate(f"1/LGf = {1/slope:.3f}", xy=(0.65, 0.15), xycoords='axes fraction',
+                fontsize=12, ha='center', va='center',
+                bbox=dict(facecolor='lightgray', alpha=0.5))
+        axs.grid()
+    
+    return slope
     
     
     
