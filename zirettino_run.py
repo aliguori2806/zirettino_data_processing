@@ -156,7 +156,6 @@ def vPositionZFTK(strip_index, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=1):
     
     return sipm_array_center_position + internal_strip_position #mm
 
-
 PositionZFTK = np.vectorize(vPositionZFTK, otypes=[np.float], cache=False)
 
 
@@ -166,6 +165,8 @@ class ZirettinoRun():
         self.timestamp = None
         self.dataversion = None
         self.asic_info = None
+        self.array_info = None
+        self.febs = []
         self.nfebs = 0
         self.data = None
         self.nevts = None
@@ -185,7 +186,6 @@ class ZirettinoRun():
         self.segment_dict = {"B": 0, "D": 1, "T": 2, "W": 3}
         self.view_dict = {"X": 0, "Y": 1}
         self.base_dir = os.path.dirname(os.path.abspath(__file__))
-        #self.default_pedestal_gain_files_path = os.path.join(self.base_dir, 'bb', 'B')
         
 
     
@@ -223,13 +223,15 @@ class ZirettinoRun():
             self.data = {}
             self.dataversion = dataversion
             self.data[feb] = OpenFileZFEB(datafile, dataversion, nevts2read)
-            self.nevts = self.data[feb][list(self.data[feb].keys())[0]].shape[0] # This is the same for multiple febs is they operate in ms mode. If not, different ZirettinoRun objects must be created for the different febs
+            # self.nevts is the same for multiple febs is they operate in ms mode. If not, different ZirettinoRun objects must be created for the different febs
+            self.nevts = self.data[feb][list(self.data[feb].keys())[0]].shape[0] 
         else:
             if self.dataversion != dataversion:
                 raise ValueError("The dataversion of the data loaded must be the same.")
             self.data[feb] = OpenFileZFEB(datafile, dataversion, nevts2read)  
             if self.nevts != self.data[feb][list(self.data[feb].keys())[0]].shape[0]:
                 print("Attenzione: sono state aggiunte due feb con un diverso numero di eventi.")
+        self.febs.append(feb)
         self.nfebs = self.nfebs + 1
         if self.gains_dfs is None:
             self.gains_dfs = {}
@@ -251,13 +253,13 @@ class ZirettinoRun():
             self.pedestals_dfs = {}
         self.pedestals_dfs[(feb, daq, gain)] = pd.read_csv(pedestalfile)
 
-    def subtract_pedestals(self, feb="ZF0", daq=1, gain="HG", sigmacut=0):
-        if self.pedestal_subtracted_febs_daqs_gains is None:
-            self.pedestal_subtracted_febs_daqs_gains = set()
-        self.pedestal_subtracted_febs_daqs_gains.add((feb, daq, gain))
-        self.data[feb][f"DAQ{daq}_{gain}_ps"] = self.data[feb][f"DAQ{daq}_{gain}"] - self.pedestals_dfs[(feb, daq, gain)]["pedestal"].to_numpy()
-        self.data[feb][f"DAQ{daq}_{gain}_ps"] = np.where(self.data[feb][f"DAQ{daq}_{gain}_ps"] > (sigmacut*self.pedestals_dfs[(feb, daq, gain)]["sigma"].to_numpy()), self.data[feb][f"DAQ{daq}_{gain}_ps"], 0)
-        
+    def subtract_pedestals(self, sigmacut=5):
+        for feb in self.febs:
+            for daq in [1, 2]:
+                for gain in ["HG", "LG"]:
+                    self.data[feb][f"DAQ{daq}_{gain}_ps"] = self.data[feb][f"DAQ{daq}_{gain}"] - self.pedestals_dfs[(feb, daq, gain)]["pedestal"].to_numpy()
+                    self.data[feb][f"DAQ{daq}_{gain}_ps"] = np.where(self.data[feb][f"DAQ{daq}_{gain}_ps"] > (sigmacut*self.pedestals_dfs[(feb, daq, gain)]["sigma"].to_numpy()), self.data[feb][f"DAQ{daq}_{gain}_ps"], 0)
+    
 
     def load_gains(self, gainfile, feb="ZF0", daq=1, gain="HG", mode="channel"):
         if self.gains_dfs is None:
@@ -265,11 +267,12 @@ class ZirettinoRun():
         if mode == "channel":
             self.gains_dfs[(feb, daq, gain)] = pd.read_csv(gainfile)
 
-    def calibrate_charge(self, feb="ZF0", daq=1, gain="HG"):
-        if self.charge_calibrated_febs_daqs_gains is None:
-            self.charge_calibrated_febs_daqs_gains = set()
-        self.charge_calibrated_febs_daqs_gains.add((feb, daq, gain))
-        self.data[feb][f"DAQ{daq}_{gain}_pe"] = self.data[feb][f"DAQ{daq}_{gain}_ps"]/self.gains_dfs[(feb, daq, gain)]["gain"].to_numpy()
+    def calibrate_charge(self):
+        for feb in self.febs:
+            for daq in [1, 2]:
+                for gain in ["HG", "LG"]:
+                    self.data[feb][f"DAQ{daq}_{gain}_pe"] = self.data[feb][f"DAQ{daq}_{gain}_ps"]/self.gains_dfs[(feb, daq, gain)]["gain"].to_numpy()
+        
 
     def separate_asics(self):
         # Creates a dictionary self.asics_data where the keys are (feb, daq, asic) tuples
@@ -287,10 +290,10 @@ class ZirettinoRun():
                     for key in asic_keys:
                         self.asics_data[(feb, daq, asic)][key] = self.data[feb][f"DAQ{daq}_{key}"][:, 32*asic:32*asic + 32]
                     for gain in ["HG", "LG"]:
-                        if (feb, daq, gain) in self.pedestal_subtracted_febs_daqs_gains:
-                            self.asics_data[(feb, daq, asic)][gain + "_ps"] = self.data[feb][f"DAQ{daq}_{gain}_ps"][:, 32*asic:32*asic + 32]
-                        if (feb, daq, gain) in self.charge_calibrated_febs_daqs_gains:
-                            self.asics_data[(feb, daq, asic)][gain + "_pe"] = self.data[feb][f"DAQ{daq}_{gain}_pe"][:, 32*asic:32*asic + 32]
+                        #if (feb, daq, gain) in self.pedestal_subtracted_febs_daqs_gains:
+                        self.asics_data[(feb, daq, asic)][gain + "_ps"] = self.data[feb][f"DAQ{daq}_{gain}_ps"][:, 32*asic:32*asic + 32]
+                        #if (feb, daq, gain) in self.charge_calibrated_febs_daqs_gains:
+                        self.asics_data[(feb, daq, asic)][gain + "_pe"] = self.data[feb][f"DAQ{daq}_{gain}_pe"][:, 32*asic:32*asic + 32]
 
 
     def reconstruct_ftk_module_geometry(self, ftk="ftk", module=0, psHG=True, peHG=True, psLG=True, peLG=True):
@@ -313,17 +316,12 @@ class ZirettinoRun():
         if self.ftk_modules_data is None:
             self.ftk_modules_data = {}
         self.ftk_modules_data[(ftk, module)] = {}
-
-        
         # According to the asic info, select the asics that are connected to the SiPM arrays reading the different sides of the ftk module considered and append their identifier (feb, daq, asic) to ftk_module_asics list
         ftk_module_asics = []
         for asic_info_key, asic_info in self.asic_info.items():
             if asic_info["FTK_type"] == ftk and asic_info["FTK_module"] == module:
                 ftk_module_asics.append(asic_info_key)
                 
-            
-        
-        
         for ftk_side in [0, 1, 2, 3]:
             self.ftk_modules_data[(ftk, module)][ftk_side] = {}
             for key in asic_keys:
