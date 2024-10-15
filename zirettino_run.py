@@ -165,6 +165,7 @@ class ZirettinoRun():
         self.timestamp = None
         self.dataversion = None
         self.asic_info = None
+        self.nfebs = 0
         self.data = None
         self.nevts = None
         self.configurators = None
@@ -183,7 +184,18 @@ class ZirettinoRun():
         self.view_dict = {"X": 0, "Y": 1}
 
     def load_asic_info(self, asic_info_file):
-        self.asic_info = pd.read_csv(asic_info_file)
+        asic_info_df = pd.read_csv(asic_info_file)
+        self.asic_info = {}
+        for _, asic_row in asic_info_df.iterrows():
+            feb = asic_row["FEB"]
+            daq = asic_row["DAQ"]
+            asic = asic_row["ASIC"]
+            cable = asic_row["CABLE"]
+            ftk_type = asic_row["FTK_TYPE"]
+            ftk_module = asic_row["FTK_MODULE"]
+            ftk_side = asic_row["FTK_SIDE"]
+            connector = asic_row["CONNECTOR"]
+        self.asic_info[(feb, daq, asic)] = {"Cable": cable, "FTK_type": ftk_type, "FTK_module": ftk_module, "FTK_side": ftk_side, "Connector": connector}
 
     def load_array_info(self, array_info_file):
         array_info_df = pd.read_csv(array_info_file)
@@ -212,6 +224,7 @@ class ZirettinoRun():
             self.data[feb] = OpenFileZFEB(datafile, dataversion, nevts2read)  
             if self.nevts != self.data[feb][list(self.data[feb].keys())[0]].shape[0]:
                 print("Attenzione: sono state aggiunte due feb con un diverso numero di eventi.")
+        self.nfebs = self.nfebs + 1
         
     def load_configurator(self, configurator_file, feb="ZF0"):
         if self.configurators is None:
@@ -245,6 +258,10 @@ class ZirettinoRun():
         self.data[feb][f"DAQ{daq}_{gain}_pe"] = self.data[feb][f"DAQ{daq}_{gain}_ps"]/self.gains_dfs[(feb, daq, gain)]["gain"].to_numpy()
 
     def separate_asics(self):
+        # Creates a dictionary self.asics_data where the keys are (feb, daq, asic) tuples
+        # The values are the arrays of HG, LG, Hit data (and eventually HG_ps, HG_pe, LG_ps, LG_pe) for the channels belonging to the specified asic
+        # NOTE: the items of self.asics_data are created EVEN IF the asic is not connected to any SiPM
+        
         if self.dataversion == 1:
             asic_keys = ["HG", "LG", "Hit"]
         if self.asics_data is None:
@@ -263,6 +280,11 @@ class ZirettinoRun():
 
 
     def reconstruct_ftk_module_geometry(self, ftk="ftk", module=0, psHG=True, peHG=True, psLG=True, peLG=True):
+        # Creates a dictionary (1) self.ftk_modules_data, where the keys are (ftk_type, module) tuples
+        # The values are again dictionaries (2) where the keys are the ftk_sides (can be either 0, 1, 2, 3)
+        # And the (final) values are dictionaries (3) where the keys are variables associated to channels HG, LG, Hit data (and eventually HG_ps, HG_pe, LG_ps, LG_pe)
+        # And the values are np.arrays with shape (self.nevts, 96) storing the variables for the 96 channels of the given sidein the events
+        # NOTE: If part of the arrays reading a given side (32 channels) are not connected (according to the asic info file), the variables will be set to 0 for the corresponding channels
 
         asic_keys = ["HG", "LG", "Hit"]
         if psHG == True:
@@ -279,7 +301,14 @@ class ZirettinoRun():
         self.ftk_modules_data[(ftk, module)] = {}
 
         
-        ftk_module_info = self.asic_info.loc[(self.asic_info["FTK_TYPE"] == ftk) & (self.asic_info["FTK_MODULE"] == module)]
+        # According to the asic info, select the asics that are connected to the SiPM arrays reading the different sides of the ftk module considered and append their identifier (feb, daq, asic) to ftk_module_asics list
+        ftk_module_asics = []
+        for asic_info_key, asic_info in self.asic_info.items():
+            if asic_info["FTK_type"] == ftk and asic_info["FTK_module"] == module:
+                ftk_module_asics.append(asic_info_key)
+                
+            
+        
         
         for ftk_side in [0, 1, 2, 3]:
             self.ftk_modules_data[(ftk, module)][ftk_side] = {}
@@ -287,19 +316,16 @@ class ZirettinoRun():
                 self.ftk_modules_data[(ftk, module)][ftk_side][key] = np.zeros((self.nevts, 96))
                 
             for iconnector, connector in enumerate(["J1", "J2", "J3"]):
-                asic_row = ftk_module_info.loc[(ftk_module_info["FTK_SIDE"] == ftk_side) & (ftk_module_info["CONNECTOR"] == connector)]
-                
-                if asic_row.empty:
+                for asic_info_key in ftk_module_asics:
+                    if self.asic_info[asic_info_key]["Connector"] == connector:
+                        for key in asic_keys:
+                            self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = self.asics_data[asic_info_key][key]
+                        break
+                else:
                     for key in asic_keys:
                         self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = 0
-                if not asic_row.empty:
-                    asic_row = asic_row.iloc[0]
-                    feb = asic_row["FEB"]
-                    daq = asic_row["DAQ"]
-                    asic = asic_row["ASIC"]
-                    for key in asic_keys:
-                        self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = self.asics_data[(feb, daq, asic)][key]
 
+                
                 
 
     def clustering(self, clukey="HG_pe", thd=6):
