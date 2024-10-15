@@ -191,6 +191,7 @@ class ZirettinoRun():
         asic_info_df = pd.read_csv(asic_info_file)
         self.asic_info = {}
         for _, asic_row in asic_info_df.iterrows():
+            
             feb = asic_row["FEB"]
             daq = asic_row["DAQ"]
             asic = asic_row["ASIC"]
@@ -199,7 +200,7 @@ class ZirettinoRun():
             ftk_module = asic_row["FTK_MODULE"]
             ftk_side = asic_row["FTK_SIDE"]
             connector = asic_row["CONNECTOR"]
-        self.asic_info[(feb, daq, asic)] = {"Cable": cable, "FTK_type": ftk_type, "FTK_module": ftk_module, "FTK_side": ftk_side, "Connector": connector}
+            self.asic_info[(feb, daq, asic)] = {"Cable": cable, "FTK_type": ftk_type, "FTK_module": ftk_module, "FTK_side": ftk_side, "Connector": connector}
 
     def load_array_info(self, array_info_file):
         array_info_df = pd.read_csv(array_info_file)
@@ -319,13 +320,17 @@ class ZirettinoRun():
                 ftk_module_asics.append(asic_info_key)
                 
         for ftk_side in [0, 1, 2, 3]:
+            print("SIDE", ftk_side)
             self.ftk_modules_data[(ftk, module)][ftk_side] = {}
             for key in asic_keys:
                 self.ftk_modules_data[(ftk, module)][ftk_side][key] = np.zeros((self.nevts, 96))
                 
             for iconnector, connector in enumerate(["J1", "J2", "J3"]):
+                print("-----------connector", connector)
                 for asic_info_key in ftk_module_asics:
-                    if self.asic_info[asic_info_key]["Connector"] == connector:
+                    print("asic", asic_info_key)
+                    if self.asic_info[asic_info_key]["Connector"] == connector and self.asic_info[asic_info_key]["FTK_side"] == ftk_side:
+                        print("connected to asic", asic_info_key)
                         for key in asic_keys:
                             self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = self.asics_data[asic_info_key][key]
                         break
