@@ -172,16 +172,14 @@ class ZirettinoRun():
         self.nevts = None
         self.configurators = None
         self.pedestals_dfs = None
-        self.pedestal_subtracted_febs_daqs_gains = None
         self.gains_dfs = None
-        self.charge_calibrated_febs_daqs_gains = None
         self.asics_data = None
         self.ftk_modules_data = None
         #self.ckeys = ["clu_ModuleID", "clu_PlaneID", "clu_SegmentID", "clu_ViewFlag", "clu_SideFlag", "clu_FirstStrip", "clu_Size", "clu_Charge_HG", "clu_ChargeStd_HG", "clu_Charge_LG", "clu_ChargeStd_LG", "clu_Position_HG", "clu_PositionError_HG", "clu_Position_LG", "clu_PositionError_LG"]
         self.eventkeys = ["Timestamp", "TriggerTag", "SpillID"]
         self.daq1keys = ["DAQ1_ID", "DAQ1_TriggerCounts", "DAQ1_Valid", "DAQ1_Flag", "DAQ1_Lost", "DAQ1_Validated"]
         self.daq2keys = ["DAQ2_ID", "DAQ2_TriggerCounts", "DAQ2_Valid", "DAQ2_Flag", "DAQ2_Lost", "DAQ2_Validated"]
-        self.ckeys = ["clu_ModuleID", "clu_PlaneID", "clu_SegmentID", "clu_ViewFlag", "clu_SideFlag", "clu_Size", "clu_Charge_HG", "clu_ChargeStd_HG", "clu_Charge_LG", "clu_ChargeStd_LG", "clu_Position_HG"]
+        self.ckeys = ["ModuleID", "PlaneID", "SegmentID", "ViewFlag", "SideFlag", "Size", "Charge_HG", "ChargeStd_HG", "Charge_LG", "ChargeStd_LG", "Position_HG"]
         
         self.segment_dict = {"B": 0, "D": 1, "T": 2, "W": 3}
         self.view_dict = {"X": 0, "Y": 1}
@@ -290,9 +288,7 @@ class ZirettinoRun():
                     for key in asic_keys:
                         self.asics_data[(feb, daq, asic)][key] = self.data[feb][f"DAQ{daq}_{key}"][:, 32*asic:32*asic + 32]
                     for gain in ["HG", "LG"]:
-                        #if (feb, daq, gain) in self.pedestal_subtracted_febs_daqs_gains:
                         self.asics_data[(feb, daq, asic)][gain + "_ps"] = self.data[feb][f"DAQ{daq}_{gain}_ps"][:, 32*asic:32*asic + 32]
-                        #if (feb, daq, gain) in self.charge_calibrated_febs_daqs_gains:
                         self.asics_data[(feb, daq, asic)][gain + "_pe"] = self.data[feb][f"DAQ{daq}_{gain}_pe"][:, 32*asic:32*asic + 32]
 
 
@@ -357,26 +353,26 @@ class ZirettinoRun():
                     breaks = np.where(np.diff(hits) > 1)[0] + 1
                     indices_clusters_event_side = np.split(hits, breaks)
                     for clu in indices_clusters_event_side:
-                        clusters_event["clu_ModuleID"].append(ftk_module[1])
-                        clusters_event["clu_PlaneID"].append(self.array_info[ftk_module[0], ftk_module[1], ftk_side]["PlaneID"])
-                        clusters_event["clu_SegmentID"].append(self.segment_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SegmentID"]])
-                        clusters_event["clu_ViewFlag"].append(self.view_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["ViewFlag"]])
-                        clusters_event["clu_SideFlag"].append(self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"])
-                        clusters_event["clu_Size"].append(len(clu))
-                        clusters_event["clu_Charge_HG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
-                        if clusters_event["clu_Charge_HG"][-1] == 0:
+                        clusters_event["ModuleID"].append(ftk_module[1])
+                        clusters_event["PlaneID"].append(self.array_info[ftk_module[0], ftk_module[1], ftk_side]["PlaneID"])
+                        clusters_event["SegmentID"].append(self.segment_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SegmentID"]])
+                        clusters_event["ViewFlag"].append(self.view_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["ViewFlag"]])
+                        clusters_event["SideFlag"].append(self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"])
+                        clusters_event["Size"].append(len(clu))
+                        clusters_event["Charge_HG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
+                        if clusters_event["Charge_HG"][-1] == 0:
                             print("ZERO CHARGE CLU", ievt)
                             print(indices_clusters_event_side)
                             print("SIDE", ftk_side)
                             print(clukey, self.ftk_modules_data[ftk_module][ftk_side][clukey][ievt])
                             print("indices", indices_clusters_event_side)
                             
-                        clusters_event["clu_ChargeStd_HG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
-                        clusters_event["clu_Charge_LG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
-                        clusters_event["clu_ChargeStd_LG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
+                        clusters_event["ChargeStd_HG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
+                        clusters_event["Charge_LG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
+                        clusters_event["ChargeStd_LG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
                         
                         clu_avg_stripID_HG = np.average(clu, weights=self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu])
-                        clusters_event["clu_Position_HG"].append(PositionZFTK(clu_avg_stripID_HG, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
+                        clusters_event["Position_HG"].append(PositionZFTK(clu_avg_stripID_HG, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
                         #clu_avg_stripID_LG = np.average(clu, weights=self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu])
                         #clusters_event["Position_LG"].append(PositionZFTK(clu_avg_stripID_LG, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
                         
@@ -390,15 +386,38 @@ class ZirettinoRun():
         
         with uproot.recreate(rootfile) as fout:
             
+            
             if self.dataversion == 1:
-                eventID = np.arange(self.nevts)
-                triggerID = self.data[list(self.data.keys())[0]]["TriggerTag"]
-                spillID = self.data[list(self.data.keys())[0]]["SpillID"]
-                
-                
+                eventID = {}
+                triggerID = {}
+                spillID = {}
+                daq1keys = {}
+                daq2keys = {}
+                daqkeys = {}
+                for feb in self.febs:
+                    eventID[feb] = np.arange(self.nevts)
+                    triggerID[feb] = self.data[feb]["TriggerTag"]
+                    spillID[feb] = self.data[feb]["SpillID"]
+                    daq1keys[feb] = {}
+                    daq2keys[feb] = {}
+                    for key in self.daq1keys:
+                        daq1keys[feb][key] = self.data[feb][key]
+                    for key in self.daq2keys:
+                        daq2keys[feb][key] = self.data[feb][key]
+                    daqkeys[feb] = daq1keys[feb]
+                    daqkeys[feb].update(daq2keys[feb])
+                    
+                        
+                fout_dict = {}
+                for feb in self.febs:
+                    print(daqkeys)
+                    fout_dict.update({f"{feb}_EventID": eventID[feb], f"{feb}_triggerID": triggerID[feb], f"{feb}_spillID": spillID[feb], f"{feb}": daqkeys[feb]})
+                fout_dict["clu"] = self.clusters
+                    
         
-                fout_dict =  {"EventID": eventID, "TriggerID": triggerID, "SpillID": spillID, "": self.clusters}                        
+                
                 fout["ZDATA"] = fout_dict
+            #fout_dict =  {"EventID": eventID, "TriggerID": triggerID, "SpillID": spillID, "": self.clusters}                        
             #TO BE IMPLEMENTED: ['NStrip', 'flag_Flag', 'flag_Lost', 'nreco', 'reco_StripNr', 'reco_ADC_HG', 'reco_ADC_LG', 'reco_Npe_HG', 'reco_Npe_LG', 'nclu', ]   
                 
             print(f"Saved rootfile at: {rootfile}")
