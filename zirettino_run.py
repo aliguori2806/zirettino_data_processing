@@ -24,11 +24,18 @@ class ZirettinoRun():
         self.gains_dfs = None
         self.asics_data = None
         self.ftk_modules_data = None
-        #self.ckeys = ["clu_ModuleID", "clu_PlaneID", "clu_SegmentID", "clu_ViewFlag", "clu_SideFlag", "clu_FirstStrip", "clu_Size", "clu_Charge_HG", "clu_ChargeStd_HG", "clu_Charge_LG", "clu_ChargeStd_LG", "clu_Position_HG", "clu_PositionError_HG", "clu_Position_LG", "clu_PositionError_LG"]
+        self.Nstrips1 = 32
+        self.N_sipm_arrays = 3
+        self.SiPM_pitch = 1
+        
+        
+
+        
         self.eventkeys = ["Timestamp", "TriggerTag", "SpillID"]
         self.daq1keys = ["DAQ1_ID", "DAQ1_TriggerCounts", "DAQ1_Valid", "DAQ1_Flag", "DAQ1_Lost", "DAQ1_Validated"]
         self.daq2keys = ["DAQ2_ID", "DAQ2_TriggerCounts", "DAQ2_Valid", "DAQ2_Flag", "DAQ2_Lost", "DAQ2_Validated"]
-        self.ckeys = ["ModuleID", "PlaneID", "SegmentID", "ViewFlag", "SideFlag", "Size", "Charge_HG", "ChargeStd_HG", "Charge_LG", "ChargeStd_LG", "Position_HG"]
+        self.ckeys = ["ModuleID", "PlaneID", "SegmentID", "ViewFlag", "SideFlag", "FirstStrip", "Size", "Charge_HG", "ChargeStd_HG", "Charge_LG", "ChargeStd_LG", "Position_HG", "PositionError_HG", "Position_LG", "PositionError_LG"]
+        self.rkeys = ["StripNr", "ADC_HG", "ADC_LG", "Npe_HG", "Npe_LG"]
         
         self.segment_dict = {"B": 0, "D": 1, "T": 2, "W": 3}
         self.view_dict = {"X": 0, "Y": 1}
@@ -40,7 +47,6 @@ class ZirettinoRun():
         asic_info_df = pd.read_csv(asic_info_file)
         self.asic_info = {}
         for _, asic_row in asic_info_df.iterrows():
-            
             feb = asic_row["FEB"]
             daq = asic_row["DAQ"]
             asic = asic_row["ASIC"]
@@ -169,17 +175,13 @@ class ZirettinoRun():
                 ftk_module_asics.append(asic_info_key)
                 
         for ftk_side in [0, 1, 2, 3]:
-            print("SIDE", ftk_side)
             self.ftk_modules_data[(ftk, module)][ftk_side] = {}
             for key in asic_keys:
                 self.ftk_modules_data[(ftk, module)][ftk_side][key] = np.zeros((self.nevts, 96))
                 
             for iconnector, connector in enumerate(["J1", "J2", "J3"]):
-                print("-----------connector", connector)
                 for asic_info_key in ftk_module_asics:
-                    print("asic", asic_info_key)
                     if self.asic_info[asic_info_key]["Connector"] == connector and self.asic_info[asic_info_key]["FTK_side"] == ftk_side:
-                        print("connected to asic", asic_info_key)
                         for key in asic_keys:
                             self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = self.asics_data[asic_info_key][key]
                         break
@@ -187,8 +189,28 @@ class ZirettinoRun():
                     for key in asic_keys:
                         self.ftk_modules_data[(ftk, module)][ftk_side][key][:, 32*iconnector:32*iconnector + 32] = 0
 
-                
-                
+    
+    def reconstruction(self, recokey="HG_pe", thd=6):
+        recos = {}
+        for ftk_module in self.ftk_modules_data.keys():
+            for ftk_side in [0, 1, 2, 3]:
+
+                ftk_module_data_side = ak.drop_none(ak.Array(self.ftk_modules_data[ftk_module][ftk_side])) # This line transforms the dictionary of ndarrays into a highlevel awkward jagged array               
+                hits = ftk_module_data_side[recokey] > thd
+                if ftk_side == 0:
+                    recos["StripNr"] = ak.local_index(hits)[hits]
+                    recos["ADC_HG"] = ftk_module_data_side["HG_ps"][hits]
+                    recos["ADC_LG"] = ftk_module_data_side["LG_ps"][hits]
+                    recos["Npe_HG"] = ftk_module_data_side["HG_pe"][hits]
+                    recos["Npe_LG"] = ftk_module_data_side["LG_pe"][hits]
+                else:
+                    recos["StripNr"] = ak.concatenate([recos["StripNr"], ak.local_index(hits)[hits]], axis=1)
+                    recos["ADC_HG"] = ak.concatenate([recos["ADC_HG"], ftk_module_data_side["HG_ps"][hits]], axis=1)
+                    recos["ADC_LG"] = ak.concatenate([recos["ADC_LG"], ftk_module_data_side["LG_ps"][hits]], axis=1)
+                    recos["Npe_HG"] = ak.concatenate([recos["Npe_HG"], ftk_module_data_side["HG_pe"][hits]], axis=1)
+                    recos["Npe_LG"] = ak.concatenate([recos["Npe_LG"], ftk_module_data_side["LG_pe"][hits]], axis=1)
+        self.recos = ak.zip(recos)
+        
 
     def clustering(self, clukey="HG_pe", thd=6):
         clusters = {}
@@ -212,35 +234,37 @@ class ZirettinoRun():
                         clusters_event["SegmentID"].append(self.segment_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SegmentID"]])
                         clusters_event["ViewFlag"].append(self.view_dict[self.array_info[ftk_module[0], ftk_module[1], ftk_side]["ViewFlag"]])
                         clusters_event["SideFlag"].append(self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"])
+                        clusters_event["FirstStrip"].append(clu[0])
                         clusters_event["Size"].append(len(clu))
                         clusters_event["Charge_HG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
                         if clusters_event["Charge_HG"][-1] == 0:
-                            print("ZERO CHARGE CLU", ievt)
-                            print(indices_clusters_event_side)
-                            print("SIDE", ftk_side)
-                            print(clukey, self.ftk_modules_data[ftk_module][ftk_side][clukey][ievt])
-                            print("indices", indices_clusters_event_side)
+                            raise ValueError(f"FOUND A ZERO CHARGE CLUSTER AT EVENT: {ievt}")
                             
                         clusters_event["ChargeStd_HG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu]))
                         clusters_event["Charge_LG"].append(np.sum(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
                         clusters_event["ChargeStd_LG"].append(np.std(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]))
                         
                         clu_avg_stripID_HG = np.average(clu, weights=self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu])
-                        clusters_event["Position_HG"].append(PositionZFTK(clu_avg_stripID_HG, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
-                        #clu_avg_stripID_LG = np.average(clu, weights=self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu])
-                        #clusters_event["Position_LG"].append(PositionZFTK(clu_avg_stripID_LG, pitch=1., N_sipm_arrays=3, Nstrips1=32, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
+                        clusters_event["Position_HG"].append(PositionZFTK(clu_avg_stripID_HG, pitch=self.SiPM_pitch, N_sipm_arrays=self.N_sipm_arrays, Nstrips1=self.Nstrips1, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
                         
+                        clusters_event["PositionError_HG"].append(self.SiPM_pitch/np.sqrt(12)/clusters_event["Charge_HG"][-1]*np.sqrt(np.sum(np.power(self.ftk_modules_data[ftk_module][ftk_side]["HG_pe"][ievt][clu],2))))
                         
+                        if np.sum(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu]) != 0:
+                            clu_avg_stripID_LG = np.average(clu, weights=self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu])
+                            clusters_event["Position_LG"].append(PositionZFTK(clu_avg_stripID_LG, pitch=self.SiPM_pitch, N_sipm_arrays=self.N_sipm_arrays, Nstrips1=self.Nstrips1, sgn=self.array_info[ftk_module[0], ftk_module[1], ftk_side]["SideFlag"]))
+                            clusters_event["PositionError_LG"].append(self.SiPM_pitch/np.sqrt(12)/np.sum(clusters_event["Charge_LG"][-1])*np.sqrt(np.sum(np.power(self.ftk_modules_data[ftk_module][ftk_side]["LG_pe"][ievt][clu],2))))
+                        else:
+                            clusters_event["Position_LG"].append(-999)
+                            clusters_event["PositionError_LG"].append(-999)
                 for key in self.ckeys:
                     clusters[key].append(clusters_event[key])
+                    
         self.clusters = ak.zip(clusters)
 
 
     def save_rootfile(self, rootfile):
         
         with uproot.recreate(rootfile) as fout:
-            
-            
             if self.dataversion == 1:
                 eventID = {}
                 triggerID = {}
@@ -264,17 +288,13 @@ class ZirettinoRun():
                         
                 fout_dict = {}
                 for feb in self.febs:
-                    print(daqkeys)
                     fout_dict.update({f"{feb}_EventID": eventID[feb], f"{feb}_triggerID": triggerID[feb], f"{feb}_spillID": spillID[feb], f"{feb}": daqkeys[feb]})
                 fout_dict["clu"] = self.clusters
-                    
-        
-                
+                fout_dict["reco"] = self.recos               
                 fout["ZDATA"] = fout_dict
-            #fout_dict =  {"EventID": eventID, "TriggerID": triggerID, "SpillID": spillID, "": self.clusters}                        
-            #TO BE IMPLEMENTED: ['NStrip', 'flag_Flag', 'flag_Lost', 'nreco', 'reco_StripNr', 'reco_ADC_HG', 'reco_ADC_LG', 'reco_Npe_HG', 'reco_Npe_LG', 'nclu', ]   
-                
             print(f"Saved rootfile at: {rootfile}")
+            print("The tree has the following branches:")
+            print(fout_dict["clu"].fields)
         
                     
                     
