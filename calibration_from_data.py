@@ -38,9 +38,14 @@ def fit_pedestal_from_data(charges, max_y_secondary_peaks=None, fitfactor=5, ran
         plt.axvline(xp - fitfactor*peak_half_width, label="Left edge on fit interval", color="red")
         plt.axvline(xp + fitfactor*peak_half_width, label="Right edge of fit interval", color="red")
         plt.plot(np.linspace(xp - fitfactor*peak_half_width, xp + fitfactor*peak_half_width, 100), gaussian(np.linspace(xp - fitfactor*peak_half_width, xp + fitfactor*peak_half_width, 100), par[0], par[1], par[2]), color="magenta")
-        plt.xlim(xp - 2*fitfactor*peak_half_width, xp + 2*fitfactor*peak_half_width)
+        plt.xlim(xp - 10*fitfactor*peak_half_width, xp + 10*fitfactor*peak_half_width)
+        plt.ylim(ymin=1)
         plt.legend()
-        plt.set_title(label)
+        plt.title(label)
+        plt.yscale("log")
+        plt.annotate(f"Pedestal = {par[1]:.2f} \n Sigma = {par[2]:.2f}", xy=(0.15, 0.15), xycoords='axes fraction', fontsize=12, ha='center', va='center', bbox=dict(facecolor='lightgray', alpha=0.5))
+        plt.grid()
+
         
     return par[1], np.sqrt(cov[1][1]), par[2], np.sqrt(cov[2][2])
 
@@ -78,7 +83,7 @@ def rough_calibration(charges_ps, first_peak, nbins, rl, rr, ped_sigma=3, minhei
     return par[0], np.sqrt(cov[0][0]), par[1], np.sqrt(cov[1][1])
 
 
-def low_gain_cross_calibration(chargesHG_ps, chargesLG_ps, maxHGcut=0.6, showplot=False):
+def low_gain_cross_calibration(chargesHG_ps, chargesLG_ps, maxHGcut=0.6, showplot=False, label=None):
 
     x = chargesHG_ps
     y = chargesLG_ps
@@ -94,6 +99,7 @@ def low_gain_cross_calibration(chargesHG_ps, chargesLG_ps, maxHGcut=0.6, showplo
                 fontsize=12, ha='center', va='center',
                 bbox=dict(facecolor='lightgray', alpha=0.5))
         axs.grid()
+        axs.set_title(label)
     
     return slope
     
